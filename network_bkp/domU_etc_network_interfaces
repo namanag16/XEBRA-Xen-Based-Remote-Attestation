@@ -1,0 +1,19 @@
+auto lo
+iface lo inet loopback
+
+# The primary network interface
+auto eth0
+iface eth0 inet static
+	address 192.168.1.3
+	broadcast 192.168.1.255
+	netmask 255.255.255.0
+	gateway 192.168.1.2
+
+
+# post-up ethtool -K eth0 tx off
+
+#
+# The commented out line above will disable TCP checksumming which
+# might resolve problems for some users.  It is disabled by default
+#
+
