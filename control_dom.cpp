@@ -1,5 +1,3 @@
-/* A simple server in the internet domain using TCP
-   The port number is passed as an argument */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,10 +8,6 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
-
-// #include <iostream>
-// #include <fstream>
-
 
 
 #include </home/scorpion/mtechProj/hmac.cpp>     // include crypto functions 
@@ -35,7 +29,6 @@
     if (bind(sockfd, (struct sockaddr *) &serv_addr, \
               sizeof(serv_addr)) < 0)  \
               error("ERROR on binding"); 
-
 
 #define CREATE_CLIENT_SOCKET(port,ser)  \
     int32_t sockfd, portno, n;\
@@ -62,7 +55,6 @@
     if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0)  \
         error("ERROR connecting");
 
-
 typedef unsigned char byte;
 
 struct bundle{
@@ -76,8 +68,6 @@ struct bundle{
 };
 
 typedef struct bundle packet;
-
-using namespace std;
 
 int block_recv(const int fd, char* data, unsigned int len)
 {
@@ -103,38 +93,47 @@ void error(const char *msg)
     exit(1);
 }
 
-void fetch_content(packet* p, int a, int b)
+void chararrtobuff(byte* arr, int len, byte* buff,int offset)
 {
-    byte mem[1000];
-    for(int i = 0; i < 1000;i++)
+    for(int i = 0;i<len;i++)
     {
-        mem[i] = i;
+        buff[offset++] = arr[i];
     }
-    int count = 0;
-    for(int i = a;i<=b;i++)
-        p->content_ab[count++] = mem[i];
 }
 
-int verify_sign(byte* msg, int len, byte* sign)
+void generate_mac(byte* msg, int len, byte* sign)
 {
-        EVP_PKEY *vkey = NULL;
-        int rc = make_skey(&vkey); /* generate vkey */
-        assert(rc == 0);
-        if(rc != 0)
-            exit(1);
-        
-        assert(vkey != NULL);
-        if(vkey == NULL)
-            exit(1); 
-        printf("%d\n", sizeof(sign));
-        rc = verify_it(msg, len, sign, 32, vkey);
-        return rc;
+    EVP_PKEY *skey = NULL;
+    
+    int rc = make_skey(&skey);
+    
+    assert(rc == 0);
+    if(rc != 0)
+        exit(1);
+    
+    assert(skey != NULL);
+    if(skey == NULL)
+        exit(1);
+
+    byte* ssign = NULL;
+    size_t slen = 0;
+
+    rc = sign_it(msg, len, &ssign, &slen, skey);
+    assert(rc == 0);
+    if(rc == 0) {
+        printf("Created signature\n");
+    } else {
+        printf("Failed to create signature, return code %d\n", rc);
+        exit(1); /* Should cleanup here */
+    }
+    
+    //print_it("Signature", ssign, slen);
+    chararrtobuff(ssign,slen,sign,0); // copy signature into the packet
 }
 
-void fwdReqToDom0(packet p)
+void sendToVerifier(packet p)
 {
-   
-    CREATE_CLIENT_SOCKET(7891,gethostbyname("localhost"))
+	CREATE_CLIENT_SOCKET(7892,gethostbyname("localhost"))
 
     // send packet
     int left = sizeof(p);
@@ -157,24 +156,21 @@ void fwdReqToDom0(packet p)
 
 int main(int argc, char *argv[])
 {
-    //Declaration section 
-    
-
+	// Basic Declarations 
     packet p;
     byte buffer[256];
 
-    int x[10] = {0,32,64,96,128,170,192,224,256,288};
-    int y[10] = {31,63,95,127,169,191,223,255,287,319};
+    // if (argc < 2) {
+    //     fprintf(stderr,"ERROR, no port provided\n");
+    //     exit(1);
+    // }
 
-    if (argc < 2) {
-        fprintf(stderr,"ERROR, no port provided\n");
-        exit(1);
-    }
+    CREATE_SERVER_SOCKET(7891) // creates and binds the server socket
 
-    CREATE_SERVER_SOCKET(atoi(argv[1])) // creates and binds the server socket
+
 
     // while(1){     /* listen continuously */
-        listen(sockfd,5);
+        listen(sockfd,2);
 
         // accept a connection 
         clilen = sizeof(cli_addr);
@@ -188,41 +184,32 @@ int main(int argc, char *argv[])
         {
             error("ERROR while reading from socket");
         }
-        p.a = ntohl(p.a);
-        printf("\na: %d\n",p.a);
-        p.b = ntohl(p.b);
-        printf("b: %d\n\n",p.b);
         print_it("nonce",p.nonce,sizeof(p.nonce));
-        print_it("signature",p.hmac,sizeof(p.hmac));
         printf("eflag: %d\n", p.eflag);
-
-
-        // verify the signature to check integrity of request ..code commented due to some problems
-        // int rc = verify_sign((byte*)&p,(sizeof(int)*2)+17,p.hmac);
-        // if(rc == 0) {
-        //     printf("Verified signature\n");
-        // } else {
-        //     printf("Failed to verify signature, return code %d\n", rc);
-        //     close(newsockfd);
-        //     continue; /* close socket start listening again */
-        // }
-
-
-        bzero(p.hmac,sizeof(p.hmac)); /*remove signature after verification*/
-        fetch_content(&p,p.a,p.b); /*Fetch contents of memory between locations a & b*/
+        printf("inputs: %d\n",p.inputs);
         print_it("Content[a,b]",p.content_ab,sizeof(p.content_ab));
-        p.inputs = 5; /* give a random input */
 
-        int n = write(newsockfd,"app dom received request",24);
+        int n = write(newsockfd,"control dom received data",25);
         if (n < 0) error("ERROR writing to socket");
         close(newsockfd);
         close(sockfd);
 
-        //send data to control domain
-        // we can later use a seperate thread to do this instead of a function call 
-        fwdReqToDom0(p);
+        // process data 
+        bzero((char *)p.hmac, sizeof(p.hmac)); 
+        generate_mac((byte*)p.nonce,sizeof(p.nonce)+sizeof(p.content_ab),p.hmac);
+
+        print_it("Signature",p.hmac,sizeof(p.hmac));
+        if(p.eflag == 1)
+        {
+        	/*Execute content_ab*/
+        	p.outputs = htonl(165); // give a random output for now	
+        }
+        
+
+        // send reply to verifier
+        sendToVerifier(p);
+
         
      // }
      return 0; 
 }
-

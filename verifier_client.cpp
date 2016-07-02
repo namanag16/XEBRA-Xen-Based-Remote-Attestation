@@ -1,4 +1,3 @@
-
 #include <stdio.h>
 #include <stdlib.h> // defines rand()
 #include <stdint.h>
@@ -9,58 +8,53 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h> 
+#include <iostream>
+#include <fstream>
+#include <assert.h>
+
 #include </usr/local/include/openssl/bio.h>
 #include </usr/local/include/openssl/ssl.h>
 #include </usr/local/include/openssl/err.h>
 #include </usr/local/include/openssl/rand.h>
-#include "/usr/local/include/openssl/crypto.h"
-#include </usr/include/array.hpp>
+// #include </usr/local/include/openssl/crypto.h>
+// #include </usr/include/boost/array.hpp>
 
-namespace ajd { 
-    namespace crypto {
-    /// A convenience typedef for a 128 bit block.
-    typedef boost::array<unsigned char, 16> block;
-    /// Remove sensitive data from the buffer
-    template<typename C> void cleanse(C &c)
+// #include </home/scorpion/mtechProj/crypto_wrapper.h>
+// using namespace ajd;
+
+using namespace std;
+
+#include </home/scorpion/mtechProj/hmac.cpp>     // include crypto functions 
+typedef unsigned char byte;
+
+// takes msg as input .. produces mac into sign
+void generate_mac(unsigned char * msg, byte* sign = NULL)
+{
+    EVP_PKEY *skey = NULL, *vkey = NULL;
+    
+    int rc = make_skey(&skey);
+    
+    assert(rc == 0);
+    if(rc != 0)
+        exit(1);
+    
+    assert(skey != NULL);
+    if(skey == NULL)
+        exit(1);
+
+    // byte* sign = NULL;
+    size_t slen = 0;
+
+    rc = sign_it(msg, sizeof(msg), &sign, &slen, skey);
+    assert(rc == 0);
+    if(rc == 0) {
+        printf("Created signature\n");
+    } else {
+        printf("Failed to create signature, return code %d\n", rc);
+        exit(1); /* Should cleanup here */
     }
-};
-
-typedef unsigned char memory;
-
-
-void key_generation()
-{
-  crypto::block key;                         // 128 bit key
-  crypto::block salt;                        // 128 bit salt
-  crypto::fill_random(salt);                 // random salt
-  crypto::derive_key(key, "password", salt); // password derived key
-  crypto::cleanse(key)                       // clear sensitive data
-}
-
-
-void message_authentication_code()
-{
-  crypto::block key;            // the hash key
-  crypto::fill_random(key);     // random key will do (for now)
-  crypto::hash h(key);          // the keyed-hash object
-  crypto::hash::value mac;      // the mac value
-  h.update("hello world!");     // add data
-  h.update("see you world!");   // more data
-  h.finalize(mac);              // get the MAC code
-  crypto::cleanse(key)          // clean senstive data
-}
-
-void showbits ( int n )
-{
-    int i, k, andmask ;
-
-    for(i =(sizeof(n)*2)-1 ; i >= 0 ; i-- )
-    {
-        andmask = 1 << i ;
-        k = n & andmask ;
-    }
-
-    k == 0 ? printf ( "0" ) : printf ( "1" ) ;
+    
+    print_it("Signature", sign, slen);
 }
 
 void inttobuff(int32_t num, char* buff, int offset)
@@ -134,13 +128,14 @@ int main(int argc, char *argv[])
     if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) 
         error("ERROR connecting");
 
-    // generate a,b boundaries 
+
+
     srand(time(NULL)); // initialize random seed 
     r = rand() % 10;
     printf("a: %d   b: %d\n\n",x[r],y[r]);
 
     
-    // initialie openssl library
+    // initialize openssl library
     ERR_load_BIO_strings();
     SSL_load_error_strings();
     OpenSSL_add_all_algorithms();
@@ -150,6 +145,7 @@ int main(int argc, char *argv[])
     unsigned char nonce[16];
 	int rc = RAND_bytes(nonce, sizeof(nonce));
 	unsigned long err = ERR_get_error();
+
 
 
 	if(rc != 1) {
@@ -177,14 +173,21 @@ int main(int argc, char *argv[])
     chararrtobuff(nonce,sizeof(nonce),sendBuffer,offset);
     offset= offset+sizeof(nonce);
     sendBuffer[offset++] = eflag;
+    sendBuffer[0] = offset;
+
+
     
+    
+
+
+
     // n = write(sockfd,sendBuffer,strlen(sendBuffer));
     // if (n < 0) 
     //      error("ERROR writing to socket");
 
 
     // start sending
-    sendBuffer[0] = offset;
+    
     int left = offset;
     int wc;
     while (left) {
